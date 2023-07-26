@@ -40,7 +40,7 @@ def kernel_p(t,x,p,Mass_phases,delta_x,List_Kmax,Parameters_fixed_kernel,Paramet
     else :
         mass_self , mass_other = Mass_phases[1] , Mass_phases[0]
     coeff = a*mass_other+b*mass_self+Kmaxp
-    result = coeff*(1+np.tanh(coeff*(x-xmin)))
+    result = coeff*(np.tanh(sl*(x-xmin))+np.tanh(sr*(xmax-x)))/2
     return(result)
 
 # Since we work with P=2 phases, we want to be able to take them apart
@@ -397,10 +397,10 @@ if __name__== "__main__":
                     # 1/6 means every 10 min
     maxbound = 2 # for the sampling, we want to sample a 4-cube of a given size 
     
-    List_Kmax = [0.4 , 0.2] # List of maximum values of the kernel
-    delta_x = 1/50 # Age step wanted
-    error_mass = 1/500 # Margin of error for the total mass 
-    Parameters_fixed_kernel = [[8,8,8,25], [8,8,5,25]]
+    List_Kmax = [0.3 , 0.3] # List of maximum values of the kernel
+    delta_x = 1/40 # Age step wanted
+    error_mass = 1/200 # Margin of error for the total mass 
+    Parameters_fixed_kernel = [[8,8,8,15], [8,8,5,15]]
     # If each kernel is an approximation a a simple function independant of time, 
     # we need a multiplicative constance, a slope to the left, a slope to the right, 
     # a minimum age where transition starts and a maximum age where the transition ends
@@ -456,7 +456,3 @@ if __name__== "__main__":
     np.savetxt('./repositery/Sobol'+'.txt',goodarray)
     array_init(init_data)
     Parallel(n_jobs=n_proc)(delayed(pde_loop)(toto[ie,:],ie) for ie in range(n_it))
-    
-    
-    
-    
