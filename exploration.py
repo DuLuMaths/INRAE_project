@@ -137,15 +137,14 @@ def extract_info(number):
     
     return(Parameters_play_kernel,Age,Time,Mass1,Mass2,Time_density,Density1,Density2)
 
-
-def kernel_p(t,x,p,Mass_phases,delta_x,List_Kmax,Parameters_fixed_kernel,Parameters_play_kernel): 
+def kernel_p(t,x,p,mass1,mass2,List_Kmax,Parameters_fixed_kernel,Parameters_play_kernel): 
     Kmaxp = List_Kmax[p]
     sl,sr,xmin,xmax = Parameters_fixed_kernel[p]
     a , b = Parameters_play_kernel[p]
     if p == 0:
-        mass_self , mass_other = Mass_phases[0] , Mass_phases[1]
+        mass_self , mass_other = mass1 , mass2
     else :
-        mass_self , mass_other = Mass_phases[1] , Mass_phases[0]
+        mass_self , mass_other = mass2 , mass1
     coeff = a*mass_other+b*mass_self+Kmaxp
     result = coeff*(np.tanh(sl*(x-xmin))+np.tanh(sr*(xmax-x)))/2
     return(result)
