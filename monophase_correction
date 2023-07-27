@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Jul 27 13:59:31 2023
+
+@author: ldumetz
+"""
+
+""" Finite difference method for 1 state """
+
+if __name__== "__main__":
+    
+    # Parameters of our scheme
+    FINAL_TIME = 200.0 
+    MAX_AGE = 25.0 
+    MAX_KERNEL = 8.0
+    DELTA_X = 1/10
+    INIT_PARA_SCHEME = [FINAL_TIME, MAX_AGE, MAX_KERNEL, DELTA_X]
+    # Parameters of the initial distribution
+    MU = 3.0 # mean of the gaussian
+    SIGMA = 0.5 # standard deviation of the gaussian
+    PARA_GAUSS = [MU, SIGMA]
+    # Parameters of the kernel
+    SLOPE_LEFT = 5.0
+    SLOPE_RIGHT = 5.0
+    MIN_AGE_TRANSI = 18.0
+    MAX_AGE_TRANSI = 24.0
+    PARA_KERNEL = [MAX_KERNEL, SLOPE_LEFT, SLOPE_RIGHT, 
+                   MIN_AGE_TRANSI, MAX_AGE_TRANSI]
+    # Parameters for the animation
+    FPS = 8 # Number of frame per second 
+    NAME = "Test" # Name of the file
+    MEMO = True # If we save the animation
+    PARA_ANIM = [FPS,NAME,MEMO]
+    
+    
+# Modules
+
+import numpy as np
+import scipy as sp
+import matplotlib.pyplot as plt
+from matplotlib import animation , rc
+import seaborn as sns
+
+
+def delta_cfl(init_para_scheme) :
+    """
+    To have CFL-like conditions for the scheme
+
+    Parameters
+    ----------
+    init_para_scheme : list
+        Contains in order the final time, the maximum age ,
+        an upper bound for the value of the kernel,
+        and the age step
+        
+        
+    Returns
+    -------
+    list_para_scheme : list
+        Composed of:
+            delta_t : float
+                Time step.
+            delta_x : float
+                Age step.
+            number_time : int
+                number_time + 1 = number of element in list_time.
+            number_age : int
+                number_age + 1 = number of element in list_age.
+    list_time : list of float
+        Discretisation of time.
+    list_age : list of float
+        Discretisation of age.
+    """
+    final_time, max_age, k_max, delta_x = init_para_scheme
+    delta_t = min( (1/3) * delta_x, delta_x / (1 + k_max * delta_x) )
+    number_time = int(final_time / delta_t)
+    number_age = int(max_age / delta_x)
+    list_time = np.array([i * delta_t for i in range(number_time + 1)]) 
+    list_age = np.array([j * delta_x for j in range(number_age+1)])
+    list_para_scheme = [delta_t, delta_x, number_time, number_age]
+    return(list_para_scheme, list_time, list_age)
+
+# To test functions individually with a compiler
+if __name__== "__main__" :
+    list_para_scheme, list_time, list_age = delta_cfl(INIT_PARA_SCHEME)
+    init_para_scheme = INIT_PARA_SCHEME
+    para_kernel = PARA_KERNEL
+    para_density = PARA_GAUSS
+    para_anim = PARA_ANIM
+    delta_t, delta_x, number_time, number_age = list_para_scheme
+
+
+
+def initial_density(x, para_gauss) :
+    """ 
+    Initial condition of the density, a Gaussian
+    """
+    mu,sigma = para_gauss
+    result = np.exp(-(x - mu)**2 / (2 * sigma**2)) / (np.sqrt(2 * np.pi)*sigma)
+    return(result)  
+
+
+def kernel(t, x, para_kernel) : 
+    """
+    Expression of the kernel, approximation of an indicator function
+    """
+    max_kernel, slope_left, slope_right, min_age_transi, max_age_transi = para_kernel
+    tanh_left = np.tanh(slope_left * (x - min_age_transi))
+    tanh_right = np.tanh(slope_right * (max_age_transi - x))
+    result = (tanh_left+tanh_right) * max_kernel/2 
+    return(result)
+
+
+def matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel) :
+    """
+    Creation of the matrix of transition between two time steps of our scheme
+
+    Parameters
+    ----------
+    t : float
+        Time at which we look at a transition.
+    init_list_para_scheme : list
+        
+        
+    para_kernel : 
+
+
+    Returns
+    -------
+    mtx_transi : array of float (CSR format)
+        Matrix of the transition.
+
+    """   
+    ratio = delta_t/delta_x
+    values_kernel = [kernel(t, x, para_kernel) for x in list_age]
+    
+    
+    Row = []
+    Col = []
+    Data = []
+    
+    # First row
+    Row += [0 for j in range(number_age + 1)]
+    Col += [j for j in range(number_age + 1)]
+        # First column
+    Data += [1 - 2 * ratio]
+        # Middle columns
+    Data += [2 * delta_t * values_kernel[j] for j in range(1, number_age - 1)] 
+        # Penultimate column
+    Data += [2 * delta_t * values_kernel[number_age - 1] + ratio] 
+        # Ultimate 
+    Data += [delta_t * values_kernel[number_age] + ratio]
+    
+    # Other rows
+        # Subdiagonal
+    Row += [i for i in range(1, number_age + 1)]
+    Col += [j for j in range(number_age)]
+    Data += [ratio for j in range(number_age)]
+        # Diagonal
+    Row += [i for i in range(1, number_age + 1)]
+    Col += [j for j in range(1, number_age + 1)]
+    Data += [1 - ratio - delta_t * values_kernel[j] 
+             for j in range(1, number_age + 1)]
+    
+    
+    row = np.array(Row)
+    col = np.array(Col)
+    data = np.array(Data)
+    mtx_transi = sp.sparse.coo_matrix((data, (row, col)), 
+                               shape = (number_age + 1, number_age + 1))
+    return(mtx_transi)
+
+
+def heatmap(t, delta_t, delta_x, number_age, list_age, para_kernel) :
+    """
+    Heatmap representation of the matrix of transition at time 
+    """
+    plt.close()
+    mtx = matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel)
+    Mtx = mtx.todense()
+    plt.gcf().suptitle("Matrix of transition at time t=%s"%(t))
+    heatmap = sns.heatmap(Mtx)
+    return(heatmap)
+
+
+def step(t, density_old, delta_t, delta_x, number_age, list_age, para_kernel) :
+    """
+    Given an approximation of our density at a time t,
+    returns an approximation at the next time step.
+
+    Returns
+    -------
+    density_new : array of float
+        Approximation of the density at the next time step
+
+    """
+    mtx = matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel)
+    density_new = mtx@density_old
+    return(density_new)
+
+
+def animation_density(init_para_scheme, para_kernel, para_density, para_anim, 
+                      funct_initial_density, funct_kernel) :
+    """
+    Create an animation of the evolution of density over time, with the kernel.
+
+    Parameters
+    ----------
+    
+
+
+    Returns
+    -------
+    Animation of the density over time.
+
+    """
+    list_para_scheme, list_time, list_age = delta_cfl(init_para_scheme)
+    delta_t, delta_x, number_time, number_age = list_para_scheme
+    density = np.array([initial_density(x,para_density) for x in list_age])
+    number_fps, name, memo = para_anim
+    
+    ecart = 10
+    list_density = [density]
+    list_values_kernel = [[funct_kernel(0,x,para_kernel) for x in list_age]]
+    current_time = [list_time[0]]
+    compt = 0
+    for i in range(len(list_time)-1): # if we consider t = Time[-1], 
+        # we will calculate an approximation for a time bigger than T 
+        t = list_time[i]
+        t_next = list_time[i+1] # time associated to the new density
+        density = step(t, density, delta_t, delta_x, number_age, list_age, para_kernel)
+        if compt == ecart:
+            compt = 0
+            list_density += [density]
+            list_values_kernel += [[funct_kernel(t_next,x,para_kernel) for x in list_age]]
+            current_time += [t_next]
+        else :
+            compt += 1
+        
+    
+    
+    fig, ax = plt.subplots(figsize=(12,10))
+    plt.xlim(0,24)
+    plt.ylim(0,2.5)
+    plt.grid()
+    plt.xlabel("Age")
+    plt.ylabel("Value")
+    plt.suptitle("Evolution of the density and the kernel over time")
+    plt.legend()
+
+
+    line, = ax.plot([],[], 'r--' , label = "Kernel")
+    point, = ax.plot([],[], 'b', label = "Density")
+
+    def init():
+        line.set_data([], [])
+        point.set_data([], [])
+        plt.legend()
+        return (line,point)
+
+    def animate(i):
+        t = current_time[i]
+        x = list_age
+        y = list_density[i]
+        z = list_values_kernel[i]
+        line.set_data(x,z)
+        point.set_data(x,y)
+        plt.title("Current time = %s"%(round(t,2)),fontsize = 16)
+        plt.legend()
+        return (line,point)
+
+    anim = animation.FuncAnimation(fig, animate, init_func=init,
+                             frames=len(list_density), interval=100, blit=True,
+                             repeat=True)
+    
+    if memo : # we save on demand
+        anim.save(filename="%s.gif"%(name), dpi=80, fps=number_fps)
+    
+    
+    # Lignes de commandes permettant de créer un widget Javascript
+    # interactif (représentation HTML par défaut des objets Animation)
+    # à remplacer par la méthode plt.show() dans un éditeur python du
+    # type spyder.
+    # attention au paramétrage dans spyder :
+    # menu outils> préférences> console IPython> Graphiques>
+    # sortie graphique : automatique > OK
+    # puis redémarrer spyder.
+    # L'animation s'affichera dans une nouvelle fenêtre au lieu de
+    # donner un graphique vierge dans le terminal)
+    
+    rc(animation)
+    anim
+    plt.close()
