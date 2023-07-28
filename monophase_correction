@@ -326,7 +326,6 @@ def colorgraph(t0, t1, init_para_scheme, para_density, para_kernel,
     # we want around 10 graphs on the picture
     ecart = int((j-i) / 10)
     list_extract_density = []
-    list_values_kernel = []
     list_extract_kernel = []
     current_time = []
     for k in range(i) : # calculation of the densities before those wanted 
