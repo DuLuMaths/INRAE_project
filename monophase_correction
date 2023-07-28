@@ -13,8 +13,8 @@ if __name__== "__main__":
     # Parameters of our scheme
     FINAL_TIME = 200.0 
     MAX_AGE = 25.0 
-    MAX_KERNEL = 8.0
-    DELTA_X = 1/10
+    MAX_KERNEL = 4.0
+    DELTA_X = 1/50
     INIT_PARA_SCHEME = [FINAL_TIME, MAX_AGE, MAX_KERNEL, DELTA_X]
     # Parameters of the initial distribution
     MU = 3.0 # mean of the gaussian
@@ -41,7 +41,8 @@ import scipy as sp
 import matplotlib.pyplot as plt
 from matplotlib import animation , rc
 import seaborn as sns
-
+import matplotlib.colors as mcolors
+import matplotlib.cm as cm
 
 def delta_cfl(init_para_scheme) :
     """
@@ -112,7 +113,8 @@ def kernel(t, x, para_kernel) :
     return(result)
 
 
-def matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel) :
+def matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel,
+                      funct_kernel) :
     """
     Creation of the matrix of transition between two time steps of our scheme
 
@@ -133,7 +135,7 @@ def matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel) :
 
     """   
     ratio = delta_t/delta_x
-    values_kernel = [kernel(t, x, para_kernel) for x in list_age]
+    values_kernel = [funct_kernel(t, x, para_kernel) for x in list_age]
     
     
     Row = []
@@ -172,19 +174,22 @@ def matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel) :
     return(mtx_transi)
 
 
-def heatmap(t, delta_t, delta_x, number_age, list_age, para_kernel) :
+def heatmap(t, delta_t, delta_x, number_age, list_age, para_kernel,
+            funct_kernel) :
     """
     Heatmap representation of the matrix of transition at time 
     """
     plt.close()
-    mtx = matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel)
+    mtx = matrix_transition(t, delta_t, delta_x, number_age, list_age, 
+                            para_kernel, funct_kernel)
     Mtx = mtx.todense()
     plt.gcf().suptitle("Matrix of transition at time t=%s"%(t))
     heatmap = sns.heatmap(Mtx)
     return(heatmap)
 
 
-def step(t, density_old, delta_t, delta_x, number_age, list_age, para_kernel) :
+def step(t, density_old, delta_t, delta_x, number_age, list_age, 
+         para_kernel, funct_kernel) :
     """
     Given an approximation of our density at a time t,
     returns an approximation at the next time step.
@@ -195,7 +200,8 @@ def step(t, density_old, delta_t, delta_x, number_age, list_age, para_kernel) :
         Approximation of the density at the next time step
 
     """
-    mtx = matrix_transition(t, delta_t, delta_x, number_age, list_age, para_kernel)
+    mtx = matrix_transition(t, delta_t, delta_x, number_age, list_age, 
+                            para_kernel, funct_kernel)
     density_new = mtx@density_old
     return(density_new)
 
@@ -217,7 +223,7 @@ def animation_density(init_para_scheme, para_kernel, para_density, para_anim,
     """
     list_para_scheme, list_time, list_age = delta_cfl(init_para_scheme)
     delta_t, delta_x, number_time, number_age = list_para_scheme
-    density = np.array([initial_density(x,para_density) for x in list_age])
+    density = np.array([funct_initial_density(x, para_density) for x in list_age])
     number_fps, name, memo = para_anim
     
     ecart = 10
@@ -229,7 +235,8 @@ def animation_density(init_para_scheme, para_kernel, para_density, para_anim,
         # we will calculate an approximation for a time bigger than T 
         t = list_time[i]
         t_next = list_time[i+1] # time associated to the new density
-        density = step(t, density, delta_t, delta_x, number_age, list_age, para_kernel)
+        density = step(t, density, delta_t, delta_x, number_age, list_age, 
+                 para_kernel, funct_kernel)
         if compt == ecart:
             compt = 0
             list_density += [density]
@@ -241,12 +248,13 @@ def animation_density(init_para_scheme, para_kernel, para_density, para_anim,
     
     
     fig, ax = plt.subplots(figsize=(12,10))
-    plt.xlim(0,24)
+    plt.xlim(0,25)
     plt.ylim(0,2.5)
     plt.grid()
     plt.xlabel("Age")
     plt.ylabel("Value")
-    plt.suptitle("Evolution of the density and the kernel over time")
+    plt.suptitle("Evolution of the density and the kernel over time", 
+                 fontsize = 20)
     plt.legend()
 
 
@@ -292,3 +300,261 @@ def animation_density(init_para_scheme, para_kernel, para_density, para_anim,
     rc(animation)
     anim
     plt.close()
+    
+    
+def colorgraph(t0, t1, init_para_scheme, para_density, para_kernel,
+                      funct_initial_density, funct_kernel) :
+    # window of observation included in [t0,t1] inter [0;T]
+    """
+    Graphs of the evolution of the density over time, 
+    using color grading to indicate the time.
+    """
+    plt.close()
+    
+    list_para_scheme, list_time, list_age = delta_cfl(init_para_scheme)
+    delta_t, delta_x, number_time, number_age = list_para_scheme
+    density = np.array([funct_initial_density(x, para_density) for x in list_age])
+    
+    # we want to only have the densities for time in [t0,t1] inter [0;T]
+    i = 0
+    while i < len(list_time) and list_time[i] < t0:
+        i += 1
+    j = 0
+    while j < len(list_time) and list_time[j] < t1:
+        j += 1
+    
+    # we want around 10 graphs on the picture
+    ecart = int((j-i) / 10)
+    list_extract_density = []
+    list_values_kernel = []
+    list_extract_kernel = []
+    current_time = []
+    for k in range(i) : # calculation of the densities before those wanted 
+        # (those for time >= t0)
+        density = step(list_time[k], density, delta_t, delta_x, number_age, list_age, 
+                       para_kernel, funct_kernel)
+    
+
+    list_extract_density += [density]
+    current_time += [list_time[i]]
+    list_extract_kernel += [[funct_kernel(list_time[i], x, para_kernel) for x in list_age]]
+    compt = 0
+    for k in range(i, j) : 
+        t = list_time[k]
+        t_next = list_time[k + 1] # time associated to the new density
+        density = step(t, density, delta_t, delta_x, number_age, list_age, 
+                       para_kernel, funct_kernel)
+        if compt == ecart:
+            compt = 0
+            list_extract_density += [density]
+            list_extract_kernel += [[funct_kernel(t_next, x, para_kernel) for x in list_age]]
+            current_time += [t_next]
+        else :
+            compt += 1
+    
+    
+
+    
+    # setup the normalization and the colormap
+    normalize = mcolors.Normalize(vmin = current_time[0], 
+                                  vmax = current_time[-1])
+    colormap1 = cm.jet
+    colormap2 = cm.binary
+    
+    fig, ax = plt.subplots()
+    for n in range(len(current_time)):
+        ax.plot(list_age, list_extract_density[n], 
+                 color=colormap1(normalize(current_time[n])))
+        ax.plot(list_age, list_extract_kernel[n], 
+                 color=colormap2(normalize(current_time[n])))
+        
+        
+    # setup the colorbar
+    scalarmappaple1 = cm.ScalarMappable(norm=normalize, cmap=colormap1)
+    scalarmappaple1.set_array(current_time)
+    scalarmappaple2 = cm.ScalarMappable(norm=normalize, cmap=colormap2)
+    scalarmappaple2.set_array(current_time)
+    plt.colorbar(scalarmappaple1, ax = None, label = "Density")
+    plt.colorbar(scalarmappaple2, ax = None, label = "Kernel")
+    plt.title("Evolution of the density from %s to %s"%(round(current_time[0], 2),
+                                                    round(current_time[-1],0)))
+    plt.xlabel("Age")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.show()
+    
+
+# To verify the conservation of mass of our scheme
+
+def mass(vect,delta_x):
+    """
+    Trapezoidal method to approximate the mass (=area) defined by a vector
+    which is an discretisation of a function.
+
+    Parameters
+    ----------
+    vect : array of float
+        Vector that approximate a function.
+    delta_x : float
+        Uniform age step.
+
+    Returns
+    -------
+    area : float
+        Approximation of the area
+    """
+    L = np.size(vect)
+    area = 0
+    for l in range(1, L - 1):
+        area += vect[l]
+    area = (delta_x/2)*(vect[0] + 2*area + vect[-1])
+    return(area)
+
+
+def mass_conservation(init_para_scheme, para_density, para_kernel,
+                      funct_initial_density, funct_kernel) :
+    """
+    Verification of the conservation of mass over time.
+
+    Returns
+    -------
+    Graph of the approximated mass over time.
+    """
+    plt.close()
+    
+    list_para_scheme, list_time, list_age = delta_cfl(init_para_scheme)
+    delta_t, delta_x, number_time, number_age = list_para_scheme
+    density = np.array([funct_initial_density(x, para_density) for x in list_age])
+
+    list_density = [density]
+    list_mass = [mass(density,delta_x)]
+    for t in list_time[0:-1]: # if we consider t = Time[-1], 
+        # we will calculate an approximation for a time bigger than T 
+        density = step(t, density, delta_t, delta_x, number_age, list_age, 
+                       para_kernel, funct_kernel)
+        list_density += [density]
+        list_mass += [mass(density, delta_x)]
+        
+    plt.plot(list_time,list_mass)
+    plt.title("Approximated mass over time ",fontsize = 28)
+    plt.ylim(0.99 * list_mass[0], 1.01 * list_mass[0])
+    plt.xlabel("Time t")
+    plt.ylabel("Mass M(t)")
+    plt.legend()
+    plt.show()
+    
+
+# To study the numerical diffusion of our scheme
+# If we have a gaussian, when the kernel is almost 0
+# we expect the solution to just be a translation of the initial gaussian
+# The speed of displacement should be 1
+# We trace the mean to see if that the case
+
+def calcul_mean(weight,value) :
+    L = np.size(weight)
+    weight_sum = 0
+    s = 0
+    for l in range(L):
+        s += weight[l]
+        weight_sum += weight[l]*value[l]
+    S = weight_sum/s
+    return(S)
+
+def graph_mean(init_para_scheme, para_kernel, para_density, 
+                      funct_initial_density, funct_kernel) :
+    """
+    Graph of the evolution of the mean over time.
+    """
+    plt.close()
+    list_para_scheme, list_time, list_age = delta_cfl(init_para_scheme)
+    delta_t, delta_x, number_time, number_age = list_para_scheme
+    
+    density = np.array([funct_initial_density(x, para_density) for x in list_age]) 
+    list_mean = [calcul_mean(density,list_age)]
+    for t in list_time[0:-1]: # if we consider t = Time[-1], 
+        # we will calculate an approximation for a time bigger than T 
+        density = step(t, density, delta_t, delta_x, number_age, list_age, 
+                       para_kernel, funct_kernel)
+        list_mean += [calcul_mean(density, list_age)]
+        
+    plt.plot(list_time, list_mean)
+    plt.title("Approximated mean over time", fontsize = 28)
+    plt.xlabel("Time")
+    plt.ylabel("Mean")
+    plt.legend()
+    plt.show()
+    
+
+# To see if the slope is almost constant when the support of the density
+# is disjoint from the support of the Kernel :
+    
+def derive_approx(vector,absci):
+    deriv = []
+    for i in range(np.size(vector) - 1):
+        deriv += [(vector[i + 1] - vector[i])/(absci[i + 1] - absci[i])]
+    return(deriv)
+    
+def graph_der_mean(init_para_scheme, para_kernel, para_density,  
+                      funct_initial_density, funct_kernel) :
+    """
+    Graph of the approximated derivative of the mean over time.
+    """
+    plt.close()
+    list_para_scheme, list_time, list_age = delta_cfl(init_para_scheme)
+    delta_t, delta_x, number_time, number_age = list_para_scheme
+    
+    density = np.array([funct_initial_density(x, para_density) for x in list_age]) 
+    list_mean = [calcul_mean(density, list_age)]
+    for t in list_time[0:-1]: # if we consider t = Time[-1], 
+        # we will calculate an approximation for a time bigger than T 
+        density = step(t, density, delta_t, delta_x, number_age, list_age, 
+                       para_kernel, funct_kernel)
+        list_mean += [calcul_mean(density, list_age)]
+        
+    deriv = derive_approx(list_mean, list_time)
+        
+    plt.plot(list_time[0:-1],deriv)
+    plt.title("Approximated derivative of the mean over time", fontsize = 28)
+    plt.xlabel("Time")
+    plt.ylabel("Derivative of the mean")
+    plt.legend()
+    plt.show()
+    
+
+# Similar things with the standard deviation
+
+def calcul_variance(weight, value, mean) :
+    L = np.size(weight)
+    weight_sum = 0
+    s = 0
+    for l in range(L):
+        s += weight[l]
+        weight_sum += weight[l] * (value[l] - mean)**2
+    S = weight_sum / s
+    return(S)
+
+def graph_sd(init_para_scheme, para_kernel, para_density,  
+                      funct_initial_density, funct_kernel) :
+    """
+    Graph of the approximated standard deviation over time.
+    """
+    plt.close()
+    list_para_scheme, list_time, list_age = delta_cfl(init_para_scheme)
+    delta_t, delta_x, number_time, number_age = list_para_scheme
+    
+    density = np.array([funct_initial_density(x, para_density) for x in list_age]) 
+    mean = calcul_mean(density, list_age)
+    list_sd = [np.sqrt(calcul_variance(density, list_age, mean))]
+    for t in list_time[0:-1]: # if we consider t = Time[-1], 
+        # we will calculate an approximation for a time bigger than T 
+        density = step(t, density, delta_t, delta_x, number_age, list_age, 
+                       para_kernel, funct_kernel)
+        mean = calcul_mean(density, list_age)
+        list_sd += [np.sqrt(calcul_variance(density, list_age, mean))]
+        
+    plt.plot(list_time, list_sd)
+    plt.title("Approximated standard deviation over time ",fontsize = 28)
+    plt.xlabel("Time")
+    plt.ylabel("Standard deviation")
+    plt.legend()
+    plt.show()    
